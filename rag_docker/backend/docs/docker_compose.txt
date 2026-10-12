@@ -1,0 +1,5 @@
+Docker Compose defines several services in one YAML file and starts them together. The three services in this project are backend, frontend, and ollama. The backend is a FastAPI API, the frontend is a Streamlit application, and ollama serves the local language model.
+
+Docker Compose services communicate over a shared default network using service names as hostnames. The frontend calls http://backend:8000, and the backend calls http://ollama:11434. Inside a container, localhost refers to that same container. It does not refer to a different Compose service.
+
+Port mappings make container applications available on the host computer. The default host ports in this project are 8501 for Streamlit, 8000 for FastAPI, and 11434 for Ollama. Users open http://localhost:8501 in their browser to use the application.
