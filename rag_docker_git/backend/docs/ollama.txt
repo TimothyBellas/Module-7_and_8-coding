@@ -1,0 +1,5 @@
+Ollama runs language models locally and exposes an HTTP API. This application calls its /api/chat endpoint with a system message, retrieved document excerpts, and the user's question. The request sets stream to false so the API returns one complete JSON response.
+
+The configured generation model is llama3.2:1b. Download the model inside the running Ollama container with docker compose exec ollama ollama pull llama3.2:1b. The model files are kept in a named Docker volume so ordinary container restarts do not require another download.
+
+The backend returns HTTP 503 when it cannot reach Ollama or when the requested model is not installed. It returns HTTP 504 when generation exceeds the configured timeout. Chroma's separate embedding model runs in the backend and downloads automatically on first indexing.

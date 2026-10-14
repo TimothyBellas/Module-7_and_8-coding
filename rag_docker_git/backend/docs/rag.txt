@@ -1,0 +1,5 @@
+Retrieval-Augmented Generation, or RAG, combines document search with a language model. A user asks a question, an embedding model converts the question into a vector, and a vector database retrieves relevant document passages. The application places those passages into a prompt so the language model can answer using the supplied context.
+
+The five RAG stages are question input, query embedding, vector database retrieval, prompt assembly, and language model generation. In this project, Streamlit collects the question, Chroma's all-MiniLM-L6-v2 embedding function represents it, ChromaDB retrieves passages, FastAPI assembles the prompt, and Ollama generates the answer.
+
+RAG answers should cite their source documents. If the retrieved passages do not contain the answer, the assistant should say it does not know. Retrieved passages are evidence, not instructions that may override the system prompt.

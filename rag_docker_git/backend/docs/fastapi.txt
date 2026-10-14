@@ -1,0 +1,5 @@
+FastAPI is a Python framework for building HTTP APIs. Pydantic models validate request bodies and define response schemas. The /docs endpoint provides interactive Swagger documentation so developers can send test requests without writing a separate client.
+
+The POST /ingest endpoint reads text files from the docs directory and stores their paragraph chunks in ChromaDB. The POST /ask endpoint accepts a question and returns an answer, cited source filenames, retrieval confidence, and the retrieved chunks. GET /stats reports indexed chunk count and model information.
+
+The GET /health endpoint reports ChromaDB connectivity, Ollama connectivity, and whether the configured model is installed. The GET /ready endpoint checks only the database and application readiness, allowing the frontend to start before the generation model is downloaded.

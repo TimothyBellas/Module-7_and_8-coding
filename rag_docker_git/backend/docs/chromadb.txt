@@ -1,0 +1,5 @@
+ChromaDB stores document embeddings, document text, and metadata. An embedding is a list of numbers representing the meaning of a passage. Similar passages have similar vectors, so the database can retrieve relevant text for a question.
+
+This project uses a persistent ChromaDB client and cosine distance. A lower cosine distance means a closer match. Only chunks below CONFIDENCE_THRESHOLD are sent to the model. A best distance below 0.5 is labeled high retrieval confidence, below 1.0 is medium, and 1.0 or higher is low. These labels describe retrieval similarity, not a calibrated probability that the answer is correct.
+
+Text files are split into paragraphs and stored with source filename and paragraph number metadata. Re-indexing uses stable chunk identifiers, updates changed passages, and removes obsolete passages after successful ingestion. Re-indexing unchanged documents does not increase the stored chunk count.

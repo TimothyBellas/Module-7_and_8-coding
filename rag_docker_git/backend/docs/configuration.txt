@@ -1,0 +1,5 @@
+Configuration should be read from environment variables rather than hard-coded into application logic. The Settings class centralizes OLLAMA_URL, MODEL_NAME, CHROMA_PATH, MAX_RESULTS, CONFIDENCE_THRESHOLD, DEBUG, and other backend settings. Docker Compose passes the root .env file to the application containers.
+
+The .env.example file documents safe default settings. The real .env file is excluded from Git and Docker build contexts. To apply a changed environment value to existing containers, use docker compose up -d --force-recreate backend frontend. A plain docker compose restart does not reload container environment variables.
+
+Named Docker volumes store the ChromaDB data, Ollama model files, and the embedding model cache. Running docker compose down stops and removes containers but keeps those named volumes. Running docker compose down -v also removes the named volumes and their data.
