@@ -1,0 +1,38 @@
+STREAMLIT CHAT INTERFACES AND SESSION STATE
+Original study notes written for this project's demonstration corpus.
+
+The rerun execution model
+
+Streamlit builds an interface by executing a Python script. When a user interacts with many widgets, Streamlit reruns the script from top to bottom. A local variable created during one run is not a reliable place to preserve conversation history for the next run. Session state supplies a per-session mapping that survives these reruns. Initialize a messages list only if it is absent from session state. Replacing it unconditionally on every run would erase the conversation each time the user submits a question or clicks a sidebar button.
+
+Session state is associated with a user's application session. It is not a permanent database and should not be described as durable chat storage across all browser restarts or server restarts. For this minimal chatbot, preserving history across widget reruns meets the interface requirement. A separate persistence design would be needed to save conversations permanently or share them between devices. Keep this distinction visible in documentation so users understand which information remains after the application is closed and which information is preserved by a Docker volume.
+
+Chat elements and message records
+
+st.chat_message() creates a chat message container for a user or assistant. st.chat_input() displays a place for the user to submit a question. A simple rendering loop reads saved message records and displays each inside a container for its role. A message record can contain role, content, confidence, and sources. User messages generally need only role and content. Assistant messages can carry the retrieved source excerpts so the same evidence remains visible when Streamlit reruns the script after a later interaction.
+
+When the user submits a question, first append it to session state and display it. Then call the backend, construct an assistant message from the response, append that message, and render it. The next rerun will reconstruct the entire conversation from the saved records. Do not append the same message once during processing and again during the history-rendering loop. The rendering loop should only display records. Separating state updates from rendering makes duplicate messages easier to prevent and makes interface tests more predictable.
+
+Showing evidence rather than only an answer
+
+A source citation is useful only if the reader can connect it to actual evidence. An answer containing [S1] should have a source entry labeled S1. Use an expandable section to keep the main conversation readable while allowing inspection of the filename, chunk index, retrieval distance, and full excerpt. The index refers to a chunk within the source file, not necessarily a printed page number. Display the source text as plain text when possible so unusual formatting in a document is not confused with interface controls or instructions.
+
+Confidence labels need a clear explanation. In this project, confidence comes from the best retained cosine distance, which measures how close the question embedding is to a retrieved chunk embedding. High retrieval confidence does not prove that every generated statement is correct. A low-confidence fallback should explain that the corpus does not supply enough evidence. Never invent a percentage of correctness just to make the interface look precise. A short caption and an inspectable source panel can communicate more honestly than an unsupported numerical confidence score.
+
+Sidebar controls and feedback
+
+The sidebar is a convenient place for status information that should remain separate from the conversation. Show whether the document store and Ollama are connected, whether configured models are available, and how many source documents and chunks are indexed. A Re-index Documents button calls POST /ingest. Re-indexing should reflect changed or removed files without accumulating duplicate chunks. A Refresh status button lets a user retry after a service finishes starting. A Clear conversation button should remove session messages without deleting the document database or downloaded models.
+
+Long operations need visible feedback. A spinner can explain that the application is updating the index or generating an answer. Show a success message after a completed re-index, then refresh the counts. Preserve that success message across an intentional rerun by placing it temporarily in session state. Handle backend failures with concise, actionable text. For example, explain that a model may still be warming up after a timeout. Do not replace every failure with an empty answer, because an empty message hides the difference between a model refusal, a network error, and a missing index.
+
+Calling a backend service
+
+Keep the backend's base URL in an environment variable such as BACKEND_URL. The interface should append endpoint paths to that configured base rather than hardcoding container service addresses throughout the script. A small request helper can apply timeouts, check HTTP status codes, decode JSON, and convert expected failures into user-facing messages. Health requests should have shorter timeouts than ingestion and generation requests. A status panel should not appear frozen for several minutes just because the language model service is unavailable.
+
+An HTTP timeout limits how long the client waits, but it does not guarantee that the server canceled the computation. If a generation request times out, the backend may still be working. Avoid automatically retrying state-changing or expensive requests indefinitely. Let the user choose when to ask again. Ingestion may be safe to repeat when it is idempotent, but repeated work can still waste time. A clear architecture separates interface state, API transport, and the backend's document logic so each part can be verified independently.
+
+Caching and application testing
+
+Caching can reduce repeated expensive work, but choose cached data carefully. A cached health response can briefly show a service as available after it stops. Cached index counts can remain stale after re-indexing unless the cache is cleared or its lifetime expires. For a small local application, fresh lightweight status requests on reruns are a reasonable choice. Do not cache all users' chat histories in a global resource. The history belongs in per-session state, while shared resources such as a reusable connection pool require different lifecycle considerations.
+
+Streamlit's AppTest can execute an interface script and inspect its elements without a full browser. A meaningful test can mock HTTP responses, submit a chat question, and verify that an assistant answer, confidence caption, and source expander appear. Another test can trigger a rerun and confirm that conversation history remains. A failure-state test can make the backend unavailable and confirm that the application displays a useful message instead of crashing. These checks supplement a real browser walkthrough, especially for accessibility, layout, and the complete container networking path.

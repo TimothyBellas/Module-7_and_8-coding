@@ -1,0 +1,42 @@
+RETRIEVAL AUGMENTED GENERATION WITH CHROMADB
+Original study notes written for this project's demonstration corpus.
+
+What the pipeline does
+
+Retrieval augmented generation, usually abbreviated RAG, combines document search with a language model. The application first finds document passages relevant to a question. It then supplies those passages as context while asking the model to write an answer. The model is not retrained on the corpus during this process. Adding a document changes the searchable index, while changing a prompt changes the instructions used for a generation request. Keeping these operations separate makes it easier to update knowledge and diagnose why an answer was unsupported.
+
+A minimal pipeline has three stages: ingest, retrieve, and generate. Ingestion loads files, splits them into chunks, computes embeddings, and stores records. Retrieval embeds the user's question and searches for nearby chunk vectors. Generation builds a prompt containing system instructions, labeled evidence, and the question, then calls the local model. A useful response includes answer text, source details, and a confidence label. The application should explicitly abstain when relevant evidence is missing rather than treating any model-generated text as a successful grounded answer.
+
+Chunking documents
+
+A chunk is a bounded excerpt of a document. Whole documents may be too long to fit into the model's prompt or may combine several unrelated topics. Very small chunks can lose the context needed to explain an idea. A practical starting strategy is to prefer paragraph boundaries while limiting chunks to about one thousand characters. If a paragraph is too long, split near a sentence or word boundary. A small character overlap, such as one hundred fifty characters, carries some context from one chunk into the next.
+
+Character counts are not token counts. A thousand characters of prose and a thousand characters of source code can tokenize differently. The embedding model's input limit and the chat model's context limit are separate constraints. Limit chunk size, the number of retrieved chunks, question length, and answer length together. Do not silently truncate embedding inputs if doing so would change what part of a chunk is searchable. Overlap also consumes storage and prompt space, so increasing it indefinitely is not a reliable way to improve retrieval quality.
+
+Embeddings and compatible spaces
+
+An embedding is a numerical vector representing aspects of an input's meaning. Documents and queries must be embedded in the same compatible space. Mixing vectors from unrelated embedding models can produce meaningless similarity comparisons or dimension errors. Use the configured embedding model for both ingestion and question retrieval. Some embedding models distinguish document and query tasks through input prefixes. A configuration change to the model or its preprocessing should create a separate collection or trigger a deliberate re-index rather than reusing incompatible stored vectors.
+
+Ollama can serve both a chat model and an embedding model, but those are different jobs. In this project, llama3.2:1b generates answer text and nomic-embed-text:v1.5 generates embeddings. An embedding model returns vectors rather than conversational answers. The backend sends bounded batches of document text to the embedding endpoint and sends one question embedding during retrieval. Keeping both operations local avoids relying on a paid hosted inference API. Initial image and model downloads still require network access before an offline workflow is possible.
+
+Storing records in ChromaDB
+
+ChromaDB stores vectors together with identifiers, document text, and metadata. Each chunk should include its source filename and its chunk index. A stable identifier can be derived from the filename, index, and content hash. Repeating ingestion then reuses unchanged records instead of adding duplicates. Upsert inserts a new identifier or updates an existing one. Synchronization should also remove identifiers for changed or deleted chunks after replacement embeddings are available. If reading the corpus or creating embeddings fails, preserve the previous working index when possible.
+
+The persistent Chroma client writes index data to a configured filesystem path. In a container, mount a named volume at that path so removing a container does not remove its stored records. Persisting the Chroma directory does not preserve a model downloaded somewhere else; Ollama needs its own model volume. The number of stored chunks is not the number of source files. To report a true document count, count distinct source filenames in metadata. This distinction also helps identify accidental duplicate ingestion during a persistence test.
+
+Similarity, thresholds, and confidence
+
+Cosine similarity measures the alignment of two vectors. Cosine distance is one minus cosine similarity, so smaller distance means closer vectors. For this project's cosine collection, a distance near zero indicates a close match, while larger values indicate weaker matches. Query for a small top-k set, then retain only results below a configured distance threshold. If the collection contains fewer than k chunks, request the available count. Avoid requesting an empty search or assuming there will always be three valid results.
+
+A threshold is a practical retrieval guardrail, not a universal constant. The best cutoff depends on the embedding model, chunking strategy, document domain, and evaluation questions. This project starts with a maximum retained distance of 0.55 and a high-confidence cutoff of 0.30. A retained best match below the high cutoff receives high retrieval confidence; other retained matches receive medium confidence. No retained context produces a low-confidence fallback. These labels summarize retrieval strength. They are not calibrated probabilities that the generated answer is factually correct.
+
+Grounded prompts and citations
+
+The system prompt should require answers based only on provided excerpts, prohibit fabricated facts and citations, and ask the model to acknowledge missing information. Give each retained excerpt a short label such as [S1]. Include the original filename and text in an explicitly delimited context block. Place the question separately so the model can distinguish the user's task from reference material. Documents are untrusted data: an excerpt that says to ignore prior instructions must not be promoted to a higher-priority system instruction.
+
+After generation, basic output validation can reject answers with missing citation labels or labels that were never supplied. A response citing [S9] is invalid if the prompt contained only [S1] and [S2]. This structural check improves traceability but does not prove that a valid citation supports every sentence. A small model may still misunderstand an excerpt. Let users inspect the actual source text, and evaluate representative questions manually. Stronger deployments can add entailment checks, sentence-level evidence review, or curated expected answers when their cost is justified.
+
+Evaluating the full path
+
+Use several categories of questions. An answerable question should retrieve the expected document and produce a supported answer. A related but unanswered question should acknowledge that the available notes do not contain enough detail. A clearly unrelated question should trigger the no-context guardrail or an explicit abstention. Inspect retrieved chunks separately from generated text so a search failure is not confused with a generation failure. Keep these evaluation questions stable while tuning thresholds. A passing API test with controlled embeddings verifies mechanics, while real-model evaluation is still needed to assess semantic quality.

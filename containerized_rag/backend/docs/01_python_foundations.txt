@@ -1,0 +1,38 @@
+PYTHON FOUNDATIONS: DATA, FUNCTIONS, AND FILES
+Original study notes written for this project's demonstration corpus.
+
+Values, names, and types
+
+Python programs manipulate objects. A variable name refers to an object; the name does not permanently acquire the type of its first value. Assigning score = 90 and then score = "ninety" is allowed, although changing the meaning of a name can make a program difficult to understand. Common built-in types include integers, floating-point numbers, strings, booleans, lists, tuples, sets, dictionaries, and None. Choose types that reflect the meaning of the information rather than storing everything as strings.
+
+Input from input() arrives as text. Converting that text with int() or float() can fail when the user supplies an unsuitable value. Catch ValueError at the point where conversion is expected to fail and explain what input is required. Do not wrap an entire program in a broad exception handler that silently continues. A missing file, a malformed number, and a programming mistake require different responses. Precise handling makes the program easier to debug and gives users a useful next step.
+
+Strings represent text and are immutable. Methods such as strip(), lower(), and replace() return new strings. They do not alter the original object. Use strip() when leading and trailing whitespace has no meaning, such as validating a question in a chatbot. Preserve whitespace when it carries information, as it can in code samples. A question that contains only spaces should be treated as empty after trimming. Validate before performing expensive work such as generating an embedding or calling a language model.
+
+Collections and mutation
+
+A list is an ordered, mutable sequence. It suits a history of chat messages because messages have an order and new items are appended. A tuple is an ordered sequence that is immutable, making it useful for fixed groups of values. A set stores distinct hashable items and supports membership checks and set operations. A dictionary maps keys to values. In a document application, a dictionary can represent metadata with keys such as source and chunk_index. Clear field names make these records easier to inspect.
+
+Mutable objects can be shared by multiple names. If two variables refer to the same list, appending through one variable is visible through the other. This matters when storing conversation state or creating default arguments. Do not use a mutable list as a function's default when each call should receive a new list. Use None as the default and create the list inside the function. For Pydantic fields containing lists, a default factory makes the intention explicit and avoids accidental shared state.
+
+Dictionary lookup with data["key"] raises KeyError when the key is missing. Lookup with data.get("key") can return a default instead. Use direct access when a missing key indicates an invalid contract; use get() when the field is optional. An API adapter should validate the shape of external data before passing it into the rest of the program. For example, an embedding response must contain a list of vectors with the expected number of items. Checking only that the HTTP status is successful is insufficient.
+
+Control flow and reusable functions
+
+An if statement selects a branch based on a condition. A for loop visits items in an iterable. A while loop continues until its condition becomes false. When processing long text in overlapping windows, ensure that the next starting position always moves forward. Otherwise a poorly chosen overlap can create an infinite loop. Validate that overlap is nonnegative and smaller than chunk size. Also stop when the final character has been included, rather than creating unnecessary repeated chunks at the end of a document.
+
+A function should perform a clearly named task. A chunk_text function can receive text, size, and overlap and return a list of strings without reading files or making network calls. Keeping this transformation separate makes it easy to test with empty text, short text, long paragraphs, and unusual whitespace. A separate ingestion function can handle reading files and storing chunks. Another function can build a model prompt. These boundaries reduce the amount of unrelated work that must be understood to change one behavior.
+
+Type hints document intended inputs and outputs. A declaration such as def count_words(text: str) -> int helps readers and analysis tools, but ordinary Python type hints do not automatically validate every value at runtime. Validate data at system boundaries with explicit checks or a validation library. A docstring should explain a function's purpose and any important behavior, such as whether indexing removes deleted documents. Avoid comments that simply repeat the next line of code without explaining a decision.
+
+Paths, files, and text encodings
+
+Use pathlib.Path to represent filesystem locations. Building paths with directory / "filename.txt" is clearer and more portable than manually joining strings with slashes. Relative paths are interpreted from a working directory, which can change depending on how the program is launched. A default document path derived from the module's own __file__ is predictable. Environment variables can override that path for a container or a developer's computer. Keep configuration choices separate from the code that reads and processes documents.
+
+Read corpus files with an explicit UTF-8 encoding. The file extension does not guarantee its encoding, and silently replacing undecodable characters may damage important content. For an educational chatbot, a clear ingestion error is preferable to quietly indexing corrupted text. A context manager closes an opened file even when processing raises an exception. Path.read_text() is convenient for small files, while streaming line by line is more suitable when files may be too large to fit comfortably in memory.
+
+Deterministic behavior and practical checks
+
+Sorting discovered filenames gives ingestion a predictable order. A cryptographic hash of a source name, chunk index, and chunk text can serve as a stable record identifier. The same document produces the same identifiers when chunking settings do not change. This supports idempotent indexing: repeating an ingestion request should preserve the total number of records rather than creating duplicates. Changed content creates new identifiers, and an explicit synchronization step can remove records that are no longer present in the corpus.
+
+A practical Python workflow separates source code, environment configuration, dependencies, and generated data. Put installed packages in a virtual environment, list application dependencies in requirements.txt, and exclude the environment from Git. Keep persistent application data out of the source repository. Use meaningful tests to verify user-visible behavior, such as rejecting blank questions or preserving indexed documents across service reconstruction. Passing those tests establishes specific evidence; it does not automatically prove that Docker networking or a real language model works on another computer.

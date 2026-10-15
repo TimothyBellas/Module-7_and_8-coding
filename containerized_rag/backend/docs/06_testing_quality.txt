@@ -1,0 +1,42 @@
+TESTING, CONTINUOUS INTEGRATION, AND PRACTICAL QUALITY
+Original study notes written for this project's demonstration corpus.
+
+What a test establishes
+
+A test checks a specific behavior under stated conditions. A passing test is useful evidence for that behavior, but its scope matters. Testing a root endpoint through an in-process client establishes that the route returns the expected response in that test environment. It does not prove that a browser can reach the service through Docker networking. Testing a controlled language-model response establishes prompt and response plumbing. It does not prove that a downloaded model will answer every question accurately. Describe verification precisely rather than labeling the entire system production ready because a few tests passed.
+
+Start with public behavior that matters to the user. For this API, basic tests should verify that GET / returns 200, GET /health returns the expected fields, and GET /stats includes document_count. Additional valuable tests cover blank questions, empty indexes, unavailable dependencies, idempotent ingestion, persistence, and source citations. Avoid writing tests that merely repeat implementation details line for line. A test is strongest when it would fail for a plausible regression that would otherwise affect someone using or maintaining the project.
+
+Isolating data and external services
+
+Tests should not modify a developer's real Chroma collection. Use a temporary directory for persistent storage and a temporary corpus containing a few clear examples. Construct application settings explicitly so a user's .env file cannot redirect a test to production data or a different service. Each test can have an isolated service instance while still exercising the real storage library. This arrangement provides stronger evidence than replacing the entire RAG pipeline with an object that always returns a fixed count or answer.
+
+External inference calls are expensive and nondeterministic compared with ordinary unit operations. A controlled HTTP transport can return small embedding vectors and predictable chat responses without running Ollama. Choose vectors that create known cosine distances so threshold behavior is testable. The fake service should also simulate connection failures, missing models, malformed embedding responses, and invalid citations. Name these tests clearly so readers understand which parts are real and which are simulated. Keep at least one separate manual or optional integration procedure for the actual local model.
+
+Ingestion and persistence checks
+
+An idempotence test indexes the same corpus twice and checks that document and chunk counts do not increase. It can also verify that unchanged chunks do not trigger new embedding requests. A synchronization test changes one file or removes it while leaving other files present, re-indexes, and verifies that obsolete text is no longer returned. A failure test makes embedding generation fail during an update and checks that the previous records remain available. These tests target data integrity risks that a simple 200-status assertion would miss.
+
+A persistence test reconstructs a service using the same database directory and confirms that records are still present without ingesting them again. The Docker version of this test should stop and recreate containers while preserving named volumes. Temporarily set automatic ingestion to false during the restart. Otherwise startup might rebuild an empty database, making lost persistence look like successful recovery. Compare both source-file and chunk counts before and after restart. Restore automatic ingestion afterward if that is the intended normal startup behavior.
+
+Guardrails and validation tests
+
+Input validation should reject empty and whitespace-only questions before making inference calls. Test overly long questions as well as missing fields. When no documents are indexed, /ask should return a clear low-confidence message without calling the embedding or chat model. When all retrieved distances exceed the threshold, the pipeline should abstain and skip generation. These checks make a guardrail observable. A system prompt that asks a model to behave responsibly is helpful, but a deterministic no-context branch provides a more direct guarantee about that specific failure mode.
+
+Citation checks should reject a generated answer that cites labels absent from the supplied context. Test an answer with no citations, one with an invalid label, and one with a valid label. Also test an explicit unknown response so the application does not present it as a confident grounded answer merely because relevant chunks were retrieved. Structural citation validation has a limited purpose. It checks reference integrity, not whether every factual claim follows from the source. Real-model evaluation should still inspect the content of the answer and the cited evidence.
+
+Frontend behavior and recoverable errors
+
+The interface needs tests beyond the backend's API contracts. Verify that submitting a question produces a user message and an assistant message, that source excerpts appear in an expandable section, and that session history survives a rerun. A sidebar re-index action should update the displayed counts. A clear-history action should remove conversation messages without deleting the index. Simulating a backend outage should produce an understandable interface message instead of an uncaught exception. These behaviors can be checked using Streamlit's application testing tools and controlled HTTP responses.
+
+Use reasonable timeouts on all outbound HTTP calls. Health checks should fail quickly, while initial embedding and generation calls may need more time on a CPU. Translate expected failures into consistent API status codes and interface messages. Log unexpected failures where developers can inspect stack traces. Avoid logging whole document contents, conversation histories, or environment files merely to troubleshoot a connection. A useful error message says which dependency is unavailable and what command or setting to inspect, without exposing unnecessary internal information to the user.
+
+Continuous integration
+
+A GitHub Actions workflow can run on pushes to main and on pull requests. A test job checks out the repository, selects a supported Python version, installs application and test dependencies, and runs pytest. A separate Docker job validates the Compose file, builds the backend and frontend images, and inspects both image names to confirm they exist. These jobs check different concerns. Test isolation avoids downloading large models in every CI run. Building images catches missing files and packaging problems that in-process tests cannot detect.
+
+Repository configuration must match the workflow's assumptions. If .env is ignored, CI should create a safe .env from .env.example before validating Compose or importing settings that require a URL. Run tests from the documented project directory so package imports resolve predictably. Keep dependency versions consistent between local verification and image builds. The workflow file alone is not evidence of a successful hosted run. After pushing the project to GitHub, inspect the Actions tab and confirm that the test and Docker jobs complete successfully for the submitted commit.
+
+Documentation and a reviewable handoff
+
+A useful README explains prerequisites, first-run downloads, startup commands, browser addresses, model choices, and how to add documents. Include an architecture diagram that shows the three services and their persistent volumes. Document the chunk strategy, confidence thresholds, and limitations of small-model answers. Provide a short acceptance checklist covering citations, unknown questions, dependency errors, persistence, and CI. Record which checks were actually run. Clear instructions let another person reproduce the project and distinguish completed verification from the remaining steps that depend on their computer.

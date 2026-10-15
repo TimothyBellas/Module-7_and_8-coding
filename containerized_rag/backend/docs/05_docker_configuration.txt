@@ -1,0 +1,38 @@
+DOCKER COMPOSE, NETWORKING, VOLUMES, AND CONFIGURATION
+Original study notes written for this project's demonstration corpus.
+
+Images and containers
+
+A Docker image packages a filesystem and instructions for starting an application. A container is a running instance of an image with its own writable layer. Editing files on a developer's computer does not automatically change files copied into an existing image. Rebuild when application source or dependencies change, unless a deliberate development bind mount supplies the source. A Dockerfile describes how to build an image. Compose describes how several services are configured and connected. Understanding this separation prevents confusion between rebuilding an image and restarting a container.
+
+A useful Python Dockerfile starts from a suitable Python base image, sets a working directory, copies requirements.txt, installs dependencies, and then copies application code. Copying the requirements file before other source files lets Docker reuse the dependency layer when only application code changes. Installing with --no-cache-dir avoids keeping pip's download cache inside the final image. Expose documents the intended listening port but does not publish it to the host. The application process must actually bind to the correct address and port when the container starts.
+
+Three services in the chatbot
+
+The chatbot uses three Compose services. The backend runs FastAPI and owns the embedded persistent Chroma client. The frontend runs Streamlit and calls the backend over HTTP. The ollama service serves the embedding and chat models. Chroma is a library used inside the backend in this design, so it does not require a fourth service. Each service has one main responsibility, and the Compose file connects their environment settings, ports, volumes, healthchecks, and startup dependencies. Keeping the service count small makes the educational stack easier to operate.
+
+The backend must bind to 0.0.0.0 inside its container so other containers can reach it. Binding only to 127.0.0.1 inside the backend container would limit access to that same container's loopback interface. Compose service names provide network addresses on the default project network. The frontend uses the backend service name, and the backend uses the ollama service name. A container's localhost points to itself. It does not refer to the Windows host or to a different service in the Compose project.
+
+Published ports and browser addresses
+
+A port mapping connects a host port to a container port. Mapping host port 8501 to container port 8501 allows a browser on the computer to reach Streamlit. If the host port is already occupied, change the configured host port and recreate the affected service. The container can continue listening on its existing internal port. This project's mappings bind to the host loopback address because it is a local demonstration. Publishing services publicly would require additional access controls and operational decisions that are outside the minimal local setup.
+
+The addresses used by people and by containers serve different purposes. A person opens the frontend's published localhost address. Streamlit's Python code calls the backend service address configured by BACKEND_URL. FastAPI calls the Ollama address configured by OLLAMA_URL. Do not replace every service address with localhost when troubleshooting; that often breaks container-to-container communication. First identify which process is making the request and which network namespace it is running in. Then verify the configured hostname and internal port for that specific connection.
+
+Named volumes and persistence
+
+A named volume stores data outside a container's disposable writable layer. Mount a Chroma volume at the exact directory configured by CHROMA_PATH. Mount a separate Ollama model volume at the model storage directory used by the Ollama image. Running docker compose down removes the project's containers and network but normally preserves its named volumes. Starting the project again can reuse both indexed chunks and downloaded models. The persistence test should compare document and chunk counts before and after container recreation while temporarily disabling automatic ingestion so it cannot hide data loss.
+
+The command docker compose down -v additionally removes the project's named volumes. In this application that means losing the saved vector index and downloaded model files. It is a reset operation, not the normal way to stop the stack. A bind mount differs from a named volume: it exposes a specific host path inside a container. The corpus directory can be bind-mounted read-only so changing text files on the host makes them available to a later re-index request. The application should not need permission to edit its reference documents.
+
+Environment configuration
+
+Configuration belongs in environment variables rather than scattered literals. A centralized Settings class can read the Ollama URL, model names, database path, retrieval limits, distance thresholds, and debug option. Validate combinations, such as requiring overlap to be smaller than chunk size. The .env file supplies local values and Compose interpolation. An env_file entry passes values into a service's container environment. These are related but distinct mechanisms. A value written in .env is not automatically available inside every container unless the Compose configuration passes it through.
+
+Commit .env.example with safe, documented defaults, and ignore the real .env file in Git and Docker build contexts. A downloaded starter project can include a non-secret .env for convenience, but a fresh Git clone should create it from the example. After changing container environment values, use docker compose up -d to apply the new configuration and recreate services when necessary. A plain docker compose restart reuses the existing container configuration and may not apply changed environment values. Rebuild as well if the image's source or installed dependencies changed.
+
+Readiness and first-run setup
+
+Starting a process does not mean it is ready to serve useful requests. Ollama can start listening before the configured model files are downloaded. A healthcheck should verify both connectivity and model availability. This project starts Ollama, downloads missing models inside that service, and marks it ready afterward. The backend depends on a healthy Ollama service and automatically indexes the corpus. The frontend waits for backend readiness. Long first-run grace periods allow model downloads and CPU embedding work to finish without prematurely reporting an ordinary slow startup as failure.
+
+Troubleshooting begins with docker compose ps and service logs. If Docker reports a missing Docker Desktop Linux engine pipe on Windows, start Docker Desktop and wait for the engine to become available before rerunning Compose. If a model is missing, inspect Ollama logs and confirm internet access for the initial download. If a container is healthy but a browser cannot connect, check the published host port. If the backend cannot reach Ollama, inspect its configured service address. Diagnose the earliest failing dependency rather than repeatedly rebuilding every service without evidence.

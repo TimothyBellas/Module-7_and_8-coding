@@ -1,0 +1,64 @@
+name: containerized-rag
+
+services:
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
+    env_file: .env
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./scripts/start-ollama.sh:/start-ollama.sh:ro
+    entrypoint: ["/bin/sh", "/start-ollama.sh"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/models-ready && ollama list >/dev/null 2>&1 && ollama show \"$$MODEL_NAME\" >/dev/null 2>&1 && ollama show \"$$EMBEDDING_MODEL\" >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 30m
+
+  backend:
+    build:
+      context: ./backend
+    image: containerized-rag-backend:local
+    pull_policy: build
+    env_file: .env
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/app/chroma_data
+      - ./backend/docs:/app/backend/docs:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, os, urllib.request; data=json.load(urllib.request.urlopen(os.environ['BACKEND_HEALTH_URL'], timeout=8)); assert data['ready']"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30m
+
+  frontend:
+    build:
+      context: ./frontend
+    image: containerized-rag-frontend:local
+    pull_policy: build
+    env_file: .env
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8501}:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['FRONTEND_HEALTH_URL'], timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  chroma_data:
+  ollama_models:

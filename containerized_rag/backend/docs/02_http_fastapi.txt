@@ -1,0 +1,38 @@
+HTTP AND FASTAPI: BUILDING A SMALL DOCUMENT API
+Original study notes written for this project's demonstration corpus.
+
+Requests, responses, and endpoints
+
+HTTP is a request-response protocol used by web applications and many service APIs. A client sends a request containing a method, a path, headers, and sometimes a body. A server returns a status code, headers, and usually a response body. An endpoint is a particular method and path that the server handles, such as GET /stats or POST /ask. The same path can have different behavior for different methods. Choosing clear endpoint names helps a frontend call the service without knowing its internal implementation.
+
+GET typically retrieves information without requesting a state change. POST commonly submits data or starts an operation. A document chatbot can expose GET /health to report dependency status, GET /stats to report index size, POST /ingest to synchronize documents, and POST /ask to answer a question. A root endpoint at GET / is a convenient small check that the HTTP application is running. Document ingestion changes stored state, so it should be an explicit POST operation rather than an accidental side effect of visiting a status page.
+
+JSON and data contracts
+
+JSON represents objects, arrays, strings, numbers, booleans, and null. It is a common format for API requests and responses because many programming languages can read it. A question request can contain a single question field. A useful answer response contains answer, sources, confidence, and chunks_retrieved fields. Source entries should identify the original filename and chunk index so that a reader can inspect the evidence. Consistent field names let the interface render a response without guessing which keys are available.
+
+FastAPI uses Python type annotations and Pydantic models to define and validate data contracts. A Pydantic question field can strip surrounding whitespace and require a minimum length of one character. Both an empty string and a string containing only spaces should be rejected before reaching the RAG pipeline. A maximum length prevents unexpectedly large questions from consuming excessive time and context. Validation failures normally produce an HTTP 422 response with structured details explaining which input failed the contract.
+
+Response models also matter. They document the fields returned by an endpoint and help catch mismatches between implementation and public behavior. Distinguish document_count from chunk_count. If six files each produce ten chunks, document_count is six and chunk_count is sixty. Calling both values documents would confuse users and make persistence checks unreliable. A confidence field should use a small documented vocabulary such as high, medium, and low. Explain whether that vocabulary reflects retrieval distance, answer correctness, or some other measurement.
+
+Status codes and failure handling
+
+A 200 response means that the HTTP request succeeded according to the endpoint's contract. A 400 response can indicate that an ingestion request cannot proceed because no supported text files were found. A 422 response indicates invalid request data. A 503 response is appropriate when a required service such as Ollama is unavailable. A 500 response indicates an unexpected server failure. Error messages should give useful next steps while avoiding enormous internal stack traces in the public JSON response. Detailed exceptions belong in application logs.
+
+Liveness and readiness answer different questions. Liveness asks whether the application process can respond. Readiness asks whether the dependencies required for useful work are available. A /health endpoint can return 200 while reporting status = degraded and ready = false when Ollama is disconnected. This lets an operator inspect the problem through the API. A Docker healthcheck must inspect the ready field rather than assuming that any 200 response means the whole application is ready. Documenting this distinction prevents misleading green status indicators.
+
+Dependency boundaries and lifecycle
+
+Dependency injection supplies a route with the service it needs. Instead of constructing a new database client inside every endpoint, create a long-lived RAG service during application lifespan and resolve it from application state. Tests can supply a separate service configured with a temporary database path and a controlled HTTP adapter. This arrangement exercises the actual routes while preventing tests from touching a user's real index or downloading models. Keep dependency creation separate from the endpoint's request validation and response construction.
+
+An application lifespan context can initialize resources when the server starts and close them when it stops. Startup ingestion should not happen merely because a test imports a Python module. Use lifespan startup for that work. Synchronous file reading, vector operations, and HTTP calls can block; run them in synchronous route functions or an appropriate worker thread instead of directly blocking an asynchronous event loop. A minimal embedded Chroma application should use a single server process unless its storage design explicitly supports a different deployment pattern.
+
+CORS and service addresses
+
+Cross-Origin Resource Sharing is a browser mechanism that controls whether frontend JavaScript may access responses from another origin. An origin includes scheme, host, and port. A FastAPI CORS middleware configuration can allow the specific origins used during development. CORS is not authentication and should not be presented as protection for a publicly exposed API. Streamlit typically makes this project's backend requests from its Python server, so those calls are server-to-server and are not governed by the browser's CORS checks in the same way.
+
+An address meaningful inside a container network may not resolve in a Windows browser. The frontend container can call http://backend:8000 because backend is a Compose service name. A person usually opens the published host address http://localhost:8501 to reach the interface. The backend container calls Ollama through the configured Ollama service address. Keep these addresses in environment configuration so the same Python modules can be used locally and in containers. A host port change does not automatically change the service's internal listening port.
+
+Interactive documentation and verification
+
+FastAPI generates interactive API documentation, commonly available at /docs. Swagger UI allows a developer to expand an endpoint, enter a request, execute it, and inspect the response. A useful manual sequence is to check health, inspect stats, ingest documents, ask an answerable question, and ask a question outside the corpus. Also submit a blank question to confirm validation. Automated endpoint tests should verify the same public contracts, but a passing mocked HTTP test does not establish that a real Ollama model is downloaded or that containers can reach one another.
